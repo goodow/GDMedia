@@ -4,7 +4,13 @@ PODS:
     - Expecta (~> 0.3)
     - FBSnapshotTestCase (= 1.6)
   - FBSnapshotTestCase (1.6)
-  - GDMedia (0.1.0)
+  - GDChannel (0.6.0):
+    - MQTTKit (~> 0.1.0)
+  - GDMedia (0.1.0):
+    - MediaLibraryKit (~> 2.5.1)
+  - MediaLibraryKit (2.5.1):
+    - GDChannel (~> 0.6.0)
+  - MQTTKit (0.1.0)
   - Specta (1.0.0)
 
 DEPENDENCIES:
@@ -12,17 +18,28 @@ DEPENDENCIES:
   - Expecta+Snapshots
   - FBSnapshotTestCase
   - GDMedia (from `../`)
+  - MediaLibraryKit (from `https://github.com/larrytin/MediaLibraryKit.git`)
   - Specta
 
 EXTERNAL SOURCES:
   GDMedia:
     :path: ../
+  MediaLibraryKit:
+    :git: https://github.com/larrytin/MediaLibraryKit.git
+
+CHECKOUT OPTIONS:
+  MediaLibraryKit:
+    :commit: 8796c08a2c66f850a70ebf91b3fcb5c687d5f9db
+    :git: https://github.com/larrytin/MediaLibraryKit.git
 
 SPEC CHECKSUMS:
   Expecta: 78b4e8b0c8291fa4524d7f74016b6065c2e391ec
   Expecta+Snapshots: 40c5ec43b43da3bae957f14fed5dc9177d08ec8b
   FBSnapshotTestCase: 9d5fe43b29ae3a0ed8fc829477971b281038f748
-  GDMedia: 426079ad296d8e3d896ce09bb4c691657a354842
+  GDChannel: 021418a45a287d9f3629b4aeefbdc457a7684fe3
+  GDMedia: 75530dc0e531a520fd76c71988064eae0cbcaa24
+  MediaLibraryKit: 891223a84a4cc8a61ccb9a45b5d0ebaf8431d648
+  MQTTKit: a4e6b8aa92db1aeae917d2b773fd72a7749937c4
   Specta: 96fe05fe5c7348b5223f85e862904f6e832abb14
 
 COCOAPODS: 0.37.1

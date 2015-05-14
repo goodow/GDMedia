@@ -2,6 +2,7 @@ source 'https://github.com/CocoaPods/Specs.git'
 
 target 'GDMedia', :exclusive => true do
   pod "GDMedia", :path => "../"
+  pod 'MediaLibraryKit', :git => 'https://github.com/larrytin/MediaLibraryKit.git'
 end
 
 target 'Tests', :exclusive => true do
