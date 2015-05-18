@@ -3,6 +3,7 @@
 //
 
 #import <MediaLibraryKit/MLMediaLibrary.h>
+#import <GDChannel/GDCBusProvider.h>
 #import "GDMFileDiscoverer.h"
 #import "NSString+SupportedMedia.h"
 #import "VLCMediaFileDiscoverer.h"
@@ -12,10 +13,12 @@
 
 @implementation GDMFileDiscoverer {
   NSMutableArray *observers;
+  id <GDCBus> bus;
 }
 - (instancetype)init {
   self = [super init];
   if (self) {
+    bus = [GDCBusProvider instance];
     __weak GDMFileDiscoverer *weak = self;
     observers = [NSMutableArray array];
     NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
@@ -57,38 +60,29 @@
   NSMutableArray *filePaths = [NSMutableArray array];
   NSURL *fileURL;
   while (foundFiles.count) {
-    NSString *fileName = foundFiles.firstObject;
-    NSString *filePath = [documentPath stringByAppendingPathComponent:fileName];
-    [foundFiles removeObject:fileName];
+    NSString *relativePath = foundFiles.firstObject;
+    NSString *fullPath = [documentPath stringByAppendingPathComponent:relativePath];
+    [foundFiles removeObject:relativePath];
+    BOOL isDirectory = NO;
+    BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:fullPath isDirectory:&isDirectory];
+    if (!exists) {
+      continue;
+    }
+    if (!isDirectory) {
+      if ([relativePath isSupportedMediaFormat]) {
+        [filePaths addObject:[@"Documents" stringByAppendingPathComponent:relativePath]];
 
-    if ([fileName isSupportedMediaFormat]) {
-      [filePaths addObject:[@"Documents" stringByAppendingPathComponent:fileName]];
-
-      /* exclude media files from backup (QA1719) */
-      fileURL = [NSURL fileURLWithPath:filePath];
-      [fileURL setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
-    } else {
-      BOOL isDirectory = NO;
-      BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:filePath isDirectory:&isDirectory];
-
-      // add folders
-      if (exists && isDirectory) {
-        NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:filePath error:nil];
-        for (NSString *file in files) {
-          NSString *fullFilePath = [filePath stringByAppendingPathComponent:file];
-          isDirectory = NO;
-          exists = [[NSFileManager defaultManager] fileExistsAtPath:fullFilePath isDirectory:&isDirectory];
-          //only add folders or files in folders
-          if ((exists && isDirectory) || ![filePath.lastPathComponent isEqualToString:@"Documents"]) {
-            NSString *folderpath = [filePath stringByReplacingOccurrencesOfString:documentPath withString:@""];
-            if (![folderpath isEqualToString:@""]) {
-              folderpath = [folderpath stringByAppendingString:@"/"];
-            }
-            NSString *path = [folderpath stringByAppendingString:file];
-            [foundFiles addObject:path];
-          }
-        }
+        /* exclude media files from backup (QA1719) */
+        fileURL = [NSURL fileURLWithPath:fullPath];
+        [fileURL setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
       }
+      continue;
+    }
+
+    // add folders
+    NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:fullPath error:nil];
+    for (NSString *file in files) {
+      [foundFiles addObject:[relativePath stringByAppendingPathComponent:file]];
     }
   }
   [[MLMediaLibrary sharedMediaLibrary] addFilePaths:filePaths];
@@ -96,25 +90,25 @@
 
 #pragma mark - media discovering
 
-- (void)mediaFileAdded:(NSString *)fileName loading:(BOOL)isLoading {
+- (void)mediaFileAdded:(NSString *)filePath loading:(BOOL)isLoading {
   if (isLoading) {
     return;
   }
   MLMediaLibrary *sharedLibrary = [MLMediaLibrary sharedMediaLibrary];
-  [sharedLibrary addFilePaths:@[[fileName stringByReplacingOccurrencesOfString:[NSHomeDirectory() stringByAppendingString:@"/"] withString:@""]]];
+  [sharedLibrary addFilePaths:@[[filePath stringByReplacingOccurrencesOfString:[NSHomeDirectory() stringByAppendingString:@"/"] withString:@""]]];
 
   /* exclude media files from backup (QA1719) */
-  NSURL *excludeURL = [NSURL fileURLWithPath:fileName];
+  NSURL *excludeURL = [NSURL fileURLWithPath:filePath];
   [excludeURL setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
 
   // TODO Should we update media db after adding new files?
-  [sharedLibrary updateMediaDatabase];
-//    [bus publishLocal:QQPConstant.topicFileView payload:nil];
+//  [sharedLibrary updateMediaDatabase];
+//  [bus publishLocal:[[GDCBusProvider clientId:nil] stringByAppendingString:@"/file/view"] payload:nil];
 }
 
-- (void)mediaFileDeleted:(NSString *)name {
+- (void)mediaFileDeleted:(NSString *)filePath {
   [[MLMediaLibrary sharedMediaLibrary] updateMediaDatabase];
-//  [bus publishLocal:QQPConstant.topicFileView payload:nil];
+//  [bus publishLocal:[[GDCBusProvider clientId:nil] stringByAppendingString:@"/file/view"] payload:nil];
 }
 
 - (NSString *)documentPath {
