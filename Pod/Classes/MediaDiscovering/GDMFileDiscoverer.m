@@ -86,6 +86,7 @@
     }
   }
   [[MLMediaLibrary sharedMediaLibrary] addFilePaths:filePaths];
+  [self updateViewContents];
 }
 
 #pragma mark - media discovering
@@ -103,15 +104,19 @@
 
   // TODO Should we update media db after adding new files?
 //  [sharedLibrary updateMediaDatabase];
-//  [bus publishLocal:[[GDCBusProvider clientId:nil] stringByAppendingString:@"/file/view"] payload:nil];
+  [self updateViewContents];
 }
 
 - (void)mediaFileDeleted:(NSString *)filePath {
   [[MLMediaLibrary sharedMediaLibrary] updateMediaDatabase];
-//  [bus publishLocal:[[GDCBusProvider clientId:nil] stringByAppendingString:@"/file/view"] payload:nil];
+  [self updateViewContents];
 }
 
 - (NSString *)documentPath {
   return NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES)[0];
+}
+
+- (void)updateViewContents {
+  [bus publishLocal:[[GDCBusProvider clientId:nil] stringByAppendingString:@"/file/view"] payload:@{@"_redirect" : @NO}];
 }
 @end
