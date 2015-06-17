@@ -12,17 +12,20 @@
 
 #import "VLCMediaFileDiscoverer.h"
 #import "NSString+SupportedMedia.h"
+#import "VLCConstants.h"
+#import <GDChannel/GDCBusProvider.h>
 
 const float MediaTimerInterval = 2.f;
 
 @interface VLCMediaFileDiscoverer () {
-  NSMutableArray *_observers;
   dispatch_source_t _directorySource;
 
   NSString *_directoryPath;
   NSArray *_directoryFiles;
   NSMutableDictionary *_addedFilesMapping;
   NSTimer *_addMediaTimer;
+
+  id <GDCBus> _bus;
 }
 
 @end
@@ -32,8 +35,8 @@ const float MediaTimerInterval = 2.f;
 - (id)init {
   self = [super init];
   if (self) {
-    _observers = [NSMutableArray array];
     _addedFilesMapping = [NSMutableDictionary dictionary];
+    _bus = [GDCBusProvider instance];
   }
 
   return self;
@@ -47,40 +50,6 @@ const float MediaTimerInterval = 2.f;
   });
 
   return instance;
-}
-
-#pragma mark - observation
-
-- (void)addObserver:(id <VLCMediaFileDiscovererDelegate>)delegate {
-  [_observers addObject:delegate];
-}
-
-- (void)removeObserver:(id <VLCMediaFileDiscovererDelegate>)delegate {
-  [_observers removeObject:delegate];
-}
-
-- (void)notifyFileDeleted:(NSString *)relativePath {
-  for (id <VLCMediaFileDiscovererDelegate> delegate in _observers) {
-    if ([delegate respondsToSelector:@selector(mediaFileDeleted:)]) {
-      [delegate mediaFileDeleted:[self fullPath:relativePath]];
-    }
-  }
-}
-
-- (void)notifyFileAdded:(NSString *)relativePath loading:(BOOL)isLoading {
-  for (id <VLCMediaFileDiscovererDelegate> delegate in _observers) {
-    if ([delegate respondsToSelector:@selector(mediaFileAdded:loading:)]) {
-      [delegate mediaFileAdded:[self fullPath:relativePath] loading:isLoading];
-    }
-  }
-}
-
-- (void)notifySizeChanged:(NSString *)relativePath size:(unsigned long long)size {
-  for (id <VLCMediaFileDiscovererDelegate> delegate in _observers) {
-    if ([delegate respondsToSelector:@selector(mediaFileChanged:size:)]) {
-      [delegate mediaFileChanged:[self fullPath:relativePath] size:size];
-    }
-  }
 }
 
 #pragma mark - discovering
@@ -125,8 +94,12 @@ const float MediaTimerInterval = 2.f;
   return foundFiles;
 }
 
-- (NSString *)fullPath:(NSString *)relativePath {
-  return [_directoryPath stringByAppendingPathComponent:relativePath];
+- (NSString *)path:(NSString *)relativePath {
+  return [[_directoryPath stringByAppendingPathComponent:relativePath] stringByReplacingOccurrencesOfString:[NSHomeDirectory() stringByAppendingString:@"/"] withString:@""];
+}
+
+- (NSString *)getType:(NSString *)path {
+  return [path isSupportedMediaFormat] ? @"video" : [path isSupportedSubtitleFormat] ? @"text" : [path isSupportedAudioMediaFormat] ? @"audio" : @"unknown";
 }
 
 #pragma mark - directory watcher delegate
@@ -139,7 +112,7 @@ const float MediaTimerInterval = 2.f;
     NSArray *deletedFiles = [_directoryFiles filteredArrayUsingPredicate:filterPredicate];
 
     for (NSString *fileName in deletedFiles) {
-      [self notifyFileDeleted:fileName];
+      [_bus publishLocal:DirectoryWatchTopic payload:@{@"action" : @"delete", @"url" : [self path:fileName], @"type" : [self getType:fileName]}];
     }
   } else if (_directoryFiles.count < foundFiles.count) { // File was added
     NSPredicate *filterPredicate = [NSPredicate predicateWithFormat:@"not (self in %@)", _directoryFiles];
@@ -147,7 +120,7 @@ const float MediaTimerInterval = 2.f;
 
     while (addedFiles.count) {
       NSString *relativePath = addedFiles.firstObject;
-      NSString *fullPath = [self fullPath:relativePath];
+      NSString *fullPath = [_directoryPath stringByAppendingPathComponent:relativePath];
       [addedFiles removeObject:relativePath];
       BOOL isDirectory = NO;
       BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:fullPath isDirectory:&isDirectory];
@@ -155,9 +128,9 @@ const float MediaTimerInterval = 2.f;
         continue;
       }
       if (!isDirectory) {
-        if ([relativePath isSupportedMediaFormat]) {
+        if ([relativePath isSupportedFormat]) {
           [_addedFilesMapping setObject:@(0) forKey:relativePath];
-          [self notifyFileAdded:relativePath loading:YES];
+          [_bus publishLocal:DirectoryWatchTopic payload:@{@"action" : @"discover", @"url" : [self path:relativePath], @"type" : [self getType:relativePath], @"size" : @(0)}];
         }
         continue;
       }
@@ -186,7 +159,7 @@ const float MediaTimerInterval = 2.f;
   NSFileManager *fileManager = [NSFileManager defaultManager];
 
   for (NSString *relativePath in allKeys) {
-    NSString *fullPath = [self fullPath:relativePath];
+    NSString *fullPath = [_directoryPath stringByAppendingPathComponent:relativePath];
     if (![fileManager fileExistsAtPath:fullPath]) {
       [_addedFilesMapping removeObjectForKey:relativePath];
       continue;
@@ -200,11 +173,11 @@ const float MediaTimerInterval = 2.f;
       continue;
     }
 
-    [self notifySizeChanged:relativePath size:[updatedSize unsignedLongLongValue]];
+    [_bus publishLocal:DirectoryWatchTopic payload:@{@"action" : @"change", @"url" : [self path:relativePath], @"type" : [self getType:relativePath], @"size" : updatedSize}];
 
     if ([prevFetchedSize compare:updatedSize] == NSOrderedSame) {
       [_addedFilesMapping removeObjectForKey:relativePath];
-      [self notifyFileAdded:relativePath loading:NO];
+      [_bus publishLocal:DirectoryWatchTopic payload:@{@"action" : @"add", @"url" : [self path:relativePath], @"type" : [self getType:relativePath], @"size" : updatedSize}];
     } else {
       [_addedFilesMapping setObject:updatedSize forKey:relativePath];
     }
@@ -219,4 +192,5 @@ const float MediaTimerInterval = 2.f;
   [_addMediaTimer invalidate];
   _addMediaTimer = nil;
 }
+
 @end

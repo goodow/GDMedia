@@ -82,3 +82,5 @@
 #else
 #define WifiInterfaceName @"en0"
 #endif
+
+#define DirectoryWatchTopic @"directory/_watch"

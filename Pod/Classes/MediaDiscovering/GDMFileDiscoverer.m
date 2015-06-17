@@ -7,9 +7,7 @@
 #import "GDMFileDiscoverer.h"
 #import "NSString+SupportedMedia.h"
 #import "VLCMediaFileDiscoverer.h"
-
-@interface GDMFileDiscoverer () <VLCMediaFileDiscovererDelegate>
-@end
+#import "VLCConstants.h"
 
 @implementation GDMFileDiscoverer {
   NSMutableArray *observers;
@@ -40,8 +38,20 @@
 
     [[MLMediaLibrary sharedMediaLibrary] applicationWillStart];
 
+    [bus subscribeLocal:DirectoryWatchTopic handler:^(id <GDCMessage> message) {
+        NSDictionary *payload = message.payload;
+        if (![payload[@"type"] isEqualToString:@"video"]) {
+          return;
+        }
+        NSString *url = payload[@"url"];
+        NSString *action = payload[@"action"];
+        if ([action isEqual:@"add"]) {
+          [weak mediaFileAdded:url];
+        } else if ([action isEqualToString:@"delete"]) {
+          [[MLMediaLibrary sharedMediaLibrary] updateMediaDatabase];
+        }
+    }];
     VLCMediaFileDiscoverer *discoverer = [VLCMediaFileDiscoverer sharedInstance];
-    [discoverer addObserver:self];
     [discoverer startDiscovering:[self documentPath]];
   }
 
@@ -86,37 +96,23 @@
     }
   }
   [[MLMediaLibrary sharedMediaLibrary] addFilePaths:filePaths];
-  [self updateViewContents];
 }
 
 #pragma mark - media discovering
 
-- (void)mediaFileAdded:(NSString *)filePath loading:(BOOL)isLoading {
-  if (isLoading) {
-    return;
-  }
+- (void)mediaFileAdded:(NSString *)filePath {
   MLMediaLibrary *sharedLibrary = [MLMediaLibrary sharedMediaLibrary];
-  [sharedLibrary addFilePaths:@[[filePath stringByReplacingOccurrencesOfString:[NSHomeDirectory() stringByAppendingString:@"/"] withString:@""]]];
+  [sharedLibrary addFilePaths:@[filePath]];
 
   /* exclude media files from backup (QA1719) */
-  NSURL *excludeURL = [NSURL fileURLWithPath:filePath];
+  NSURL *excludeURL = [NSURL fileURLWithPath:[NSHomeDirectory() stringByAppendingPathComponent:filePath]];
   [excludeURL setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
 
   // TODO Should we update media db after adding new files?
 //  [sharedLibrary updateMediaDatabase];
-  [self updateViewContents];
-}
-
-- (void)mediaFileDeleted:(NSString *)filePath {
-  [[MLMediaLibrary sharedMediaLibrary] updateMediaDatabase];
-  [self updateViewContents];
 }
 
 - (NSString *)documentPath {
   return NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES)[0];
-}
-
-- (void)updateViewContents {
-  [bus publishLocal:[[GDCBusProvider clientId:nil] stringByAppendingString:@"/file/view"] payload:@{@"_redirect" : @NO}];
 }
 @end
